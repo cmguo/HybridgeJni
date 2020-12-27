@@ -5,6 +5,8 @@ DEFINES += HYBRIDGEJNI_LIBRARY
 
 CONFIG += c++11
 
+include(../config.pri)
+
 # The following define makes your compiler emit warnings if you use
 # any Qt feature that has been marked deprecated (the exact warnings
 # depend on your compiler). Please consult the documentation of the
@@ -18,16 +20,20 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     hybridgejni.cpp \
-    jnibridge.cpp \
-    jnimeta.cpp
+    jnichannel.cpp \
+    jniclass.cpp \
+    jnimeta.cpp \
+    jnitransport.cpp \
+    jnivariant.cpp
 
 HEADERS += \
     HybridgeJni_global.h \
     hybridgejni.h \
-    jnibridge.h \
-    jnimeta.h
-
-include(natiflect/natiflect.pri)
+    jnichannel.h \
+    jniclass.h \
+    jnimeta.h \
+    jnitransport.h \
+    jnivariant.h
 
 # Default rules for deployment.
 unix {
@@ -35,8 +41,7 @@ unix {
 }
 !isEmpty(target.path): INSTALLS += target
 
-INCLUDEPATH += "C:\Users\Brandon\AppData\Local\Android\Sdk\ndk-bundle\sources\cxx-stl\llvm-libc++\include"
-QMAKE_LFLAGS += -Wl,--version-script,$$PWD/HybridgeJni.version
+#INCLUDEPATH += "C:\Users\Brandon\AppData\Local\Android\Sdk\ndk-bundle\sources\cxx-stl\llvm-libc++\include"
 
 win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../Hybridge/release/ -lHybridge
 else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../Hybridge/debug/ -lHybridge

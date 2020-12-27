@@ -1,7 +1,12 @@
 #include "hybridgejni.h"
+#include "jnichannel.h"
+#include "jniclass.h"
 #include "jnimeta.h"
+#include "jnitransport.h"
+#include "jnivariant.h"
 
-static JavaVM* s_vm = nullptr;
+#include <mutex>
+#include <iostream>
 
 static jclass sc_RuntimeException = nullptr;
 
@@ -11,52 +16,195 @@ HybridgeJni::HybridgeJni()
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*)
 {
+    std::cout << "JNI_OnLoad" << std::endl;
     JNIEnv *env = nullptr;
     int status = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
     if (status != JNI_OK)
         return status;
-    if (!JniMeta::init(vm, env))
-        return JNI_ERR;
     // RuntimeException
     sc_RuntimeException = env->FindClass("java/lang/RuntimeException");
     if (sc_RuntimeException == nullptr) {
         return JNI_ERR;
     }
     sc_RuntimeException = reinterpret_cast<jclass>(env->NewGlobalRef(sc_RuntimeException));
-    // PointF fields
-    jclass clazzPointF = env->FindClass("android/graphics/PointF");
-    if (clazzPointF == nullptr) {
-        return JNI_ERR;
-    }
-    sf_PointF_X = env->GetFieldID(clazzPointF, "x", "F");
-    sf_PointF_Y = env->GetFieldID(clazzPointF, "y", "F");
-    // RectF methods
-    jclass clazzRectF = env->FindClass("android/graphics/RectF");
-    if (clazzRectF == nullptr) {
-        return JNI_ERR;
-    }
-    sm_RectF_set = env->GetMethodID(clazzRectF, "set", "(FFFF)V");
-    // Matrix methods
-    jclass clazzMatrix = env->FindClass("android/graphics/Matrix");
-    if (clazzMatrix == nullptr) {
-        return JNI_ERR;
-    }
-    sm_Matrix_getValues = env->GetMethodID(clazzMatrix, "getValues", "([F)V");
-    // Stroke methods
-    JNINativeMethod2 methods[] = {
-        {"create", "([Landroid/graphics/PointF;[FFZZZ)J", reinterpret_cast<void*>(&createStroke)},
-        {"clone", "(J)J", reinterpret_cast<void*>(&cloneStroke)},
-        {"transform", "(JLandroid/graphics/Matrix;)V", reinterpret_cast<void*>(&transformStroke)},
-        {"hitTest", "(JLandroid/graphics/PointF;)Z", reinterpret_cast<void*>(&hitTestStroke)},
-        {"getGeometry", "(JLandroid/graphics/RectF;)Landroid/graphics/Path;", reinterpret_cast<void*>(&getStrokeGeometry)},
-        {"free", "(J)V", reinterpret_cast<void*>(&freeStroke)},
+    // Channel methods
+    JNINativeMethod methodsChannel[] = {
+        {"create", "()J", reinterpret_cast<void*>(&JChannel::create)},
+        {"registerObject", "(JLjava/lang/String;Ljava/lang/Object;)V", reinterpret_cast<void*>(&JChannel::registerObject)},
+        {"deregisterObject", "(JLjava/lang/Object;)V", reinterpret_cast<void*>(&JChannel::deregisterObject)},
+        {"blockUpdates", "(J)Z", reinterpret_cast<void*>(&JChannel::blockUpdates)},
+        {"setBlockUpdates", "(JZ)V", reinterpret_cast<void*>(&JChannel::setBlockUpdates)},
+        {"connectTo", "(JJ)V", reinterpret_cast<void*>(&JChannel::connectTo)},
+        {"disconnectFrom", "(JJ)V", reinterpret_cast<void*>(&JChannel::disconnectFrom)},
+        {"propertyChanged", "(JLjava/lang/Object;Ljava/lang/String;)V", reinterpret_cast<void*>(&JChannel::propertyChanged)},
+        {"timerEvent", "(J)V", reinterpret_cast<void*>(&JChannel::timerEvent)},
+        {"free", "(J)V", reinterpret_cast<void*>(&JChannel::free)},
     };
-    jclass clazzStroke = env->FindClass("com/tal/inkcanvas/Stroke");
-    if (clazzStroke == nullptr) {
+    jclass clazzChannel = env->FindClass("com/tal/hybridge/Channel");
+    if (clazzChannel == nullptr) {
         return JNI_ERR;
     }
-    status = env->RegisterNatives(clazzStroke, reinterpret_cast<JNINativeMethod*>(methods), sizeof(methods) / sizeof(methods[0]));
+    std::cout << "RegisterNatives" << std::endl;
+    status = env->RegisterNatives(clazzChannel, reinterpret_cast<JNINativeMethod*>(methodsChannel), sizeof(methodsChannel) / sizeof(methodsChannel[0]));
     if (status != JNI_OK)
         return status;
+    // Transport methods
+    JNINativeMethod methodsTransport[] = {
+        {"create", "()J", reinterpret_cast<void*>(&JTransport::create)},
+        {"messageReceived", "(JLjava/lang/String;)V", reinterpret_cast<void*>(&JTransport::messageReceived)},
+        {"free", "(J)V", reinterpret_cast<void*>(&JTransport::free)},
+    };
+    jclass clazzTransport = env->FindClass("com/tal/hybridge/Transport");
+    if (clazzTransport == nullptr) {
+        return JNI_ERR;
+    }
+    status = env->RegisterNatives(clazzTransport, reinterpret_cast<JNINativeMethod*>(methodsTransport), sizeof(methodsTransport) / sizeof(methodsTransport[0]));
+    if (status != JNI_OK)
+        return status;
+    JniVariant::init(env);
     return JNI_VERSION_1_6;
+}
+
+static std::vector<std::shared_ptr<JniChannel>> channels(1, nullptr);
+static std::vector<std::shared_ptr<JniTransport>> transports(1, nullptr);
+static std::recursive_mutex smutex;
+
+JNIEXPORT void JNI_OnUnload(JavaVM*, void*)
+{
+    std::cout << "JNI_OnUnload" << std::endl;
+    std::lock_guard<std::recursive_mutex> l(smutex);
+    transports.clear();
+    channels.clear();
+}
+
+#define C(env, channel) \
+    std::lock_guard<std::recursive_mutex> lc(smutex); \
+    if (channel >= static_cast<jlong>(channels.size())) { \
+        env->ThrowNew(sc_RuntimeException, "channel index out of range"); \
+        return F; \
+    } \
+    std::shared_ptr<JniChannel> & c = channels[static_cast<size_t>(channel)]; \
+    if (c == nullptr) { \
+        env->ThrowNew(sc_RuntimeException, "channel item not found"); \
+        return F; \
+    }
+
+#define T(env, transport) \
+    std::lock_guard<std::recursive_mutex> lt(smutex); \
+    if (transport >= static_cast<jlong>(transports.size())) { \
+        env->ThrowNew(sc_RuntimeException, "transport index out of range"); \
+        return F; \
+    } \
+    std::shared_ptr<JniTransport> & t = transports[static_cast<size_t>(transport)]; \
+    if (t == nullptr) { \
+        env->ThrowNew(sc_RuntimeException, "transport item not found"); \
+        return F; \
+    }
+
+jlong JChannel::create(JNIEnv *env, jobject handle)
+{
+    std::cout << "JChannel::create" << std::endl;
+    std::shared_ptr<JniChannel> c(new JniChannel(env, handle));
+    std::lock_guard<std::recursive_mutex> l(smutex);
+    auto iter = std::find(channels.begin() + 1, channels.end(), nullptr);
+    if (iter == channels.end())
+        iter = channels.insert(iter, c);
+    else
+        *iter = c;
+    return std::distance(channels.begin(), iter);
+}
+
+void JChannel::registerObject(JNIEnv *env, jobject, jlong channel, jstring name, jobject object)
+{
+    std::cout << "JChannel::registerObject" << std::endl;
+#undef F
+#define F
+    C(env, channel)
+    c->registerObject(JString(env, name), object);
+}
+
+void JChannel::deregisterObject(JNIEnv *env, jobject, jlong channel, jobject object)
+{
+    std::cout << "JChannel::deregisterObject" << std::endl;
+    C(env, channel)
+    return c->deregisterObject(object);
+}
+
+jboolean JChannel::blockUpdates(JNIEnv *env, jobject, jlong channel)
+{
+#undef F
+#define F false
+    C(env, channel)
+    return c->blockUpdates();
+}
+
+void JChannel::setBlockUpdates(JNIEnv *env, jobject, jlong channel, jboolean block)
+{
+#undef F
+#define F
+    C(env, channel)
+    c->setBlockUpdates(block);
+}
+
+void JChannel::connectTo(JNIEnv *env, jobject, jlong channel, jlong transport)
+{
+    std::cout << "JChannel::connectTo" << std::endl;
+    C(env, channel)
+    T(env, transport)
+    c->connectTo(t.get());
+}
+
+void JChannel::disconnectFrom(JNIEnv *env, jobject, jlong channel, jlong transport)
+{
+    std::cout << "JChannel::disconnectFrom" << std::endl;
+    C(env, channel)
+    T(env, transport)
+    c->disconnectFrom(t.get());
+}
+
+void JChannel::propertyChanged(JNIEnv *env, jobject, jlong channel, jobject object, jstring name)
+{
+    std::cout << "JChannel::propertyChanged" << std::endl;
+    C(env, channel)
+    c->propertyChanged(object, name);
+}
+
+void JChannel::timerEvent(JNIEnv *env, jobject, jlong channel)
+{
+    C(env, channel)
+    c->timerEvent();
+}
+
+void JChannel::free(JNIEnv *env, jobject, jlong channel)
+{
+    std::cout << "JChannel::free" << std::endl;
+    C(env, channel)
+    c.reset();
+}
+
+jlong JTransport::create(JNIEnv *env, jobject handle)
+{
+    std::cout << "JTransport::create" << std::endl;
+    std::shared_ptr<JniTransport> t(new JniTransport(env, handle));
+    std::lock_guard<std::recursive_mutex> l(smutex);
+    auto iter = std::find(transports.begin() + 1, transports.end(), nullptr);
+    if (iter == transports.end())
+        iter = transports.insert(iter, t);
+    else
+        *iter = t;
+    return std::distance(transports.begin(), iter);
+}
+
+void JTransport::messageReceived(JNIEnv *env, jobject, jlong transport, jstring message)
+{
+    std::cout << "JTransport::messageReceived" << std::endl;
+    T(env, transport)
+    t->messageReceived(message);
+}
+
+void JTransport::free(JNIEnv *env, jobject, jlong transport)
+{
+    std::cout << "JTransport::free" << std::endl;
+    T(env, transport)
+    t.reset();
 }
