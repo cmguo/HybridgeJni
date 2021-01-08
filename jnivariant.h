@@ -10,9 +10,17 @@ class JniVariant
 public:
     static void init(JNIEnv * env);
 
-    static Value toValue(jobject const & object);
+    static int type(jclass clazz);
+
+    static Value toValue(jobject object);
 
     static jobject fromValue(Value const & value);
+
+    static jobject registerObject(JNIEnv * env, jobject object);
+
+    static jobject findObject(JNIEnv * env, jobject object);
+
+    static jobject deregisterObject(JNIEnv * env, jobject object);
 };
 
 #endif // JNIVARIANT_H

@@ -9,6 +9,23 @@
 struct MethodClass;
 struct FieldClass;
 
+struct Class
+{
+public:
+    Class(JNIEnv *env, char const * className = nullptr);
+    virtual ~Class();
+    JNIEnv *env() const { return env_; }
+    jclass clazz() const { return clazz_; }
+    jobject newInstance();
+    friend bool operator==(Class const & l, jclass const & r)
+    {
+        return l.env_->IsSameObject(l.clazz_, r);
+    }
+protected:
+    JNIEnv *env_;
+    jclass clazz_;
+};
+
 struct ClassClass
 {
     ClassClass(JNIEnv *env);
@@ -16,6 +33,7 @@ struct ClassClass
     jboolean isPrimitive(jclass clazz) const;
     jboolean isArray(jclass clazz) const;
     jboolean isInstance(jclass clazz, jobject object) const;
+    jboolean isAssignableFrom(jclass clazz, jclass clazz2) const;
     std::string getName(jclass clazz) const;
     std::vector<jobject> getDeclaredMethods(jclass clazz) const;
     std::vector<jobject> getDeclaredFields(jclass clazz) const;
@@ -31,6 +49,7 @@ private:
     jmethodID isPrimitive_;
     jmethodID isArray_;
     jmethodID isInstance_;
+    jmethodID isAssignableFrom_;
     jmethodID getName_;
     jmethodID getDeclaredMethods_;
     jmethodID getDeclaredFields_;
@@ -62,10 +81,12 @@ struct MethodClass : MemberClass
 {
     MethodClass(JNIEnv *env);
     jint getParameterCount(jobject method) const;
+    jobjectArray getParameterTypes(jobject method) const;
     jobject invoke(jobject method, jobject object, jobjectArray args) const;
 
 private:
     jmethodID getParameterCount_;
+    jmethodID getParameterTypes_;
     jmethodID invoke_;
 };
 
@@ -107,6 +128,7 @@ struct JThrowable
 {
 public:
     static void check(JNIEnv * env);
+    static bool clear(JNIEnv * env);
 
     JThrowable(JNIEnv *env);
     jstring getMessage(jthrowable e) const;
@@ -131,15 +153,20 @@ private:
     jobject target_;
 };
 
+template <typename T>
 class JLocalRef
 {
 public:
-    JLocalRef(JNIEnv *env, jobject target) : env_(env), target_(target) {}
+    JLocalRef(JNIEnv *env, T target) : env_(env), target_(target) {}
     ~JLocalRef() { env_->DeleteLocalRef(target_); }
+    operator T() { return target_; }
 private:
     JNIEnv *env_;
-    jobject target_;
+    T target_;
 };
+
+typedef JLocalRef<jobject> JLocalObjectRef;
+typedef JLocalRef<jclass> JLocalClassRef;
 
 class JString
 {

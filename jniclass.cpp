@@ -1,5 +1,28 @@
 #include "jniclass.h"
 
+Class::Class(JNIEnv *env, const char *className)
+{
+    env_ = env;
+    if (className) {
+        clazz_ = env->FindClass(className);
+        clazz_ = static_cast<jclass>(env->NewGlobalRef(clazz_));
+    } else {
+        clazz_ = nullptr;
+    }
+}
+
+Class::~Class()
+{
+    if (clazz_)
+        env_->DeleteGlobalRef(clazz_);
+}
+
+jobject Class::newInstance()
+{
+    return env_->NewObject(clazz_,
+                           env_->GetMethodID(clazz_, "<init>", "()V"));
+}
+
 ClassClass::ClassClass(JNIEnv *env)
     : env_(env)
 {
@@ -7,6 +30,7 @@ ClassClass::ClassClass(JNIEnv *env)
     isPrimitive_ = env->GetMethodID(clazz, "isPrimitive", "()Z");
     isArray_ = env->GetMethodID(clazz, "isArray", "()Z");
     isInstance_ = env->GetMethodID(clazz, "isInstance", "(Ljava/lang/Object;)Z");
+    isAssignableFrom_ = env->GetMethodID(clazz, "isAssignableFrom", "(Ljava/lang/Class;)Z");
     getName_ = env->GetMethodID(clazz, "getName", "()Ljava/lang/String;");
     getDeclaredMethods_ = env->GetMethodID(clazz, "getDeclaredMethods", "()[Ljava/lang/reflect/Method;");
     getDeclaredFields_ = env->GetMethodID(clazz, "getDeclaredFields", "()[Ljava/lang/reflect/Field;");
@@ -33,6 +57,11 @@ jboolean ClassClass::isArray(jclass clazz) const
 jboolean ClassClass::isInstance(jclass clazz, jobject object) const
 {
     return env_->CallBooleanMethod(clazz, isInstance_, object);
+}
+
+jboolean ClassClass::isAssignableFrom(jclass clazz, jclass clazz2) const
+{
+    return env_->CallBooleanMethod(clazz, isAssignableFrom_, clazz2);
 }
 
 std::string ClassClass::getName(jclass clazz) const
@@ -81,7 +110,8 @@ jclass ClassClass::getClass(jobject object) const
 
 std::string ClassClass::toString(jobject object) const
 {
-    return JString(env_, env_->CallObjectMethod(object, toString_));
+    JLocalObjectRef string(env_, env_->CallObjectMethod(object, toString_));
+    return JString(env_, string);
 }
 
 MemberClass::MemberClass(JNIEnv *env)
@@ -113,6 +143,7 @@ MethodClass::MethodClass(JNIEnv *env)
 {
     jclass clazz = env->FindClass("java/lang/reflect/Method");
     getParameterCount_ = env->GetMethodID(clazz, "getParameterCount", "()I");
+    getParameterTypes_ = env->GetMethodID(clazz, "getParameterTypes", "()[Ljava/lang/Class;");
     invoke_ = env->GetMethodID(clazz, "invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;");
     JThrowable::check(env);
 }
@@ -120,6 +151,11 @@ MethodClass::MethodClass(JNIEnv *env)
 jint MethodClass::getParameterCount(jobject method) const
 {
     return env_->CallIntMethod(method, getParameterCount_);
+}
+
+jobjectArray MethodClass::getParameterTypes(jobject method) const
+{
+    return static_cast<jobjectArray>(env_->CallObjectMethod(method, getParameterTypes_));
 }
 
 jobject MethodClass::invoke(jobject method, jobject object, jobjectArray args) const
@@ -172,6 +208,17 @@ void JThrowable::check(JNIEnv *env)
         th.printStackTrace(e);
         throw std::runtime_error(JString(env, th.getMessage(e)));
     }
+}
+
+bool JThrowable::clear(JNIEnv *env)
+{
+    jthrowable e = env->ExceptionOccurred();
+    if (e) {
+        static JThrowable th(env);
+        th.printStackTrace(e);
+        env->ExceptionClear();
+    }
+    return e != nullptr;
 }
 
 JThrowable::JThrowable(JNIEnv *env)

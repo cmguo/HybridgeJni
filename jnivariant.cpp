@@ -3,33 +3,14 @@
 
 #include <algorithm>
 
-struct JniConverter
+struct JniConverter : public Class
 {
     JniConverter(JNIEnv *env, char const * className = nullptr)
+        : Class(env, className)
     {
-        env_ = env;
-        if (className) {
-            clazz_ = env->FindClass(className);
-            clazz_ = static_cast<jclass>(env->NewGlobalRef(clazz_));
-        } else {
-            clazz_ = nullptr;
-        }
-    }
-    virtual ~JniConverter()
-    {
-        if (clazz_)
-            env_->DeleteGlobalRef(clazz_);
     }
     virtual Value toValue(jobject object) = 0;
     virtual jobject fromValue(Value const & value) = 0;
-    jclass clazz() const { return clazz_; }
-    friend bool operator==(JniConverter const & l, jclass const & r)
-    {
-        return l.env_->IsSameObject(l.clazz_, r);
-    }
-protected:
-    JNIEnv *env_;
-    jclass clazz_;
 };
 
 struct BoxConverter : JniConverter
@@ -119,15 +100,31 @@ struct ArrayConverter : JniConverter
         Array array2;
         int n = env_->GetArrayLength(array);
         for (int i = 0; i < n; ++i) {
-            jobject object = env_->GetObjectArrayElement(array, i);
+            JLocalObjectRef object(env_, env_->GetObjectArrayElement(array, i));
             array2.emplace_back(JniVariant::toValue(object));
-            env_->DeleteLocalRef(object);
         }
         return std::move(array2);
     }
     virtual jobject fromValue(Value const & value) override {
-        return env_->NewStringUTF(value.toString().c_str());
+        Array const & varray = value.toArray();
+        int n = static_cast<int>(varray.size());
+        jobjectArray jarray = env_->NewObjectArray(n, classClass().objectClass(), nullptr);
+        for (int i = 0; i < n; ++i) {
+            env_->SetObjectArrayElement(jarray, i, JniVariant::fromValue(varray[static_cast<size_t>(i)]));
+        }
+        return jarray;
     }
+};
+
+struct ArrayListClass : Class
+{
+    ArrayListClass(JNIEnv * env)
+        : Class(env, "java/lang/ArrayList")
+    {
+        add_ = env->GetMethodID(clazz_, "add", "(Ljava/lang/Object;)Z");
+    }
+    void add(jobject iterator, jobject entry) { env_->CallVoidMethod(iterator, add_, entry); }
+    jmethodID add_;
 };
 
 struct IterableConverter : JniConverter
@@ -146,14 +143,21 @@ struct IterableConverter : JniConverter
         Array varray;
         jobject iterater = this->iterater(object);
         while (iteratorConverter_.hasNext(iterater)) {
-            jobject o = iteratorConverter_.next(iterater);
+            JLocalObjectRef o(env_, iteratorConverter_.next(iterater));
             varray.emplace_back(JniVariant::toValue(o));
-            env_->DeleteLocalRef(o);
         }
         return std::move(varray);
     }
     virtual jobject fromValue(Value const & value) override {
-        return env_->NewStringUTF(value.toString().c_str());
+        Array const & varray = value.toArray();
+        int n = static_cast<int>(varray.size());
+        static ArrayListClass alc(env_);
+        jobject jlist = alc.newInstance();
+        for (int i = 0; i < n; ++i) {
+            JLocalObjectRef item(env_, JniVariant::fromValue(varray[static_cast<size_t>(i)]));
+            alc.add(jlist, item);
+        }
+        return jlist;
     }
 public:
     struct IteratorConverter : JniConverter
@@ -175,6 +179,17 @@ protected:
     IteratorConverter iteratorConverter_;
 };
 
+struct TreeMapClass : Class
+{
+    TreeMapClass(JNIEnv * env)
+        : Class(env, "java/util/TreeMap")
+    {
+        put_ = env->GetMethodID(clazz_, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+    void put(jobject map, jobject key, jobject entry) { env_->CallObjectMethod(map, put_, key, entry); }
+    jmethodID put_;
+};
+
 struct MapConverter : JniConverter
 {
     MapConverter(JNIEnv *env, IterableConverter * iterable) : JniConverter(env, "java/util/Map"),
@@ -189,20 +204,27 @@ struct MapConverter : JniConverter
         ClassClass & cc = classClass();
         while (iteratorConverter.hasNext(iterater)) {
             jobject entry = iteratorConverter.next(iterater);
-            jobject key = entryConverter_.getKey(entry);
-            jobject value = entryConverter_.getValue(entry);
+            JLocalObjectRef key(env_, entryConverter_.getKey(entry));
+            JLocalObjectRef value(env_, entryConverter_.getValue(entry));
             map.emplace(cc.toString(key), JniVariant::toValue(value));
-            env_->DeleteLocalRef(entry);
         }
         return std::move(map);
     }
     virtual jobject fromValue(Value const & value) override {
-        return env_->NewStringUTF(value.toString().c_str());
+        Map const & map = value.toMap();
+        static TreeMapClass tmc(env_);
+        jobject jmap = tmc.newInstance();
+        for (auto & it : map) {
+            JLocalObjectRef key(env_, env_->NewStringUTF(it.first.c_str()));
+            JLocalObjectRef value(env_, JniVariant::fromValue(it.second));
+            tmc.put(jmap, key, value);
+        }
+        return jmap;
     }
 private:
     struct EntryConverter : JniConverter
     {
-        EntryConverter(JNIEnv *env) : JniConverter(env, "java/util/Map/Entry") {
+        EntryConverter(JNIEnv *env) : JniConverter(env, "java/util/Map$Entry") {
             getKey_ = env->GetMethodID(clazz_, "getKey", "()Ljava/lang/Object;");
             getValue_ = env->GetMethodID(clazz_, "getValue", "()Ljava/lang/Object;");
         }
@@ -266,6 +288,7 @@ static JniConverter * classes[12]; // last three: Array, Iterable, Map
 
 void JniVariant::init(JNIEnv *env)
 {
+    auto iterableConverter = new IterableConverter(env);
     JniConverter * classes2[] = {
         new BooleanConverter(env),
         new ByteConverter(env),
@@ -277,13 +300,44 @@ void JniVariant::init(JNIEnv *env)
         new DoubleConverter(env),
         new StringConverter(env),
         new ArrayConverter(env),
-        new IterableConverter(env),
-        nullptr,
+        iterableConverter,
+        new MapConverter(env, iterableConverter),
     };
+    JThrowable::check(env);
     std::copy(classes2, classes2 + 12, classes);
 }
 
-Value JniVariant::toValue(const jobject & object)
+int JniVariant::type(jclass type)
+{
+    ClassClass & ci = classClass();
+    if (ci.isArray(type)) {
+        return Value::Array_;
+    }
+    JniConverter ** pjc = std::find_if(classes, classes + 9, [type] (JniConverter * jc) {
+        return *jc == type;
+    });
+    if (pjc < classes + Converters::Array) {
+        int n = static_cast<int>(pjc - classes);
+        return n == Converters::Boolean ? Value::Bool
+                                        : (n < Converters::Long
+                                           ? Value::Int
+                                           : n - Converters::Long + Value::Long);
+    }
+    if (ci.isAssignableFrom(classes[Converters::Iterable]->clazz(), type)) {
+        return Value::Array_;
+    }
+    if (ci.isAssignableFrom(classes[Converters::Map]->clazz(), type)) {
+        return Value::Map_;
+    }
+    return Value::Object_;
+}
+
+// ProxyObject.invoke(args): args
+// ProxyObject.setProperty(value): value
+// Object.getProperty(): result
+// Object.invoke(): result
+
+Value JniVariant::toValue(jobject object)
 {
     ClassClass & ci = classClass();
     jclass type = ci.getClass(object);
@@ -294,23 +348,30 @@ Value JniVariant::toValue(const jobject & object)
     JniConverter ** pjc = std::find_if(classes, classes + 9, [type] (JniConverter * jc) {
         return *jc == type;
     });
-    if (pjc < classes + 9) {
+    if (pjc < classes + Converters::Array) {
         if (comtype == type)
             return (*pjc)->toValue(object);
         else
             return static_cast<BoxConverter*>(*pjc)->toArrayValue(static_cast<jarray>(object));
     }
     if (comtype != type) {
-        return classes[9]->toValue(object);
+        return classes[Converters::Array]->toValue(object);
     }
-    if (ci.isInstance(classes[10]->clazz(), object)) {
-        return classes[10]->toValue(object);
+    if (ci.isInstance(classes[Converters::Iterable]->clazz(), object)) {
+        return classes[Converters::Iterable]->toValue(object);
     }
-    if (ci.isInstance(classes[11]->clazz(), object)) {
-        return classes[11]->toValue(object);
+    if (ci.isInstance(classes[Converters::Map]->clazz(), object)) {
+        return classes[Converters::Map]->toValue(object);
     }
-    return Value(object);
+    return Value(registerObject(classes[0]->env(), object));
 }
+
+// init(): result
+// ProxyObject.invoke(): result
+// ProxyObject.getProperty(): result
+// ProxyObject.signal(args): args
+// Object.setProperty(value): value
+// Object.invoke(args): args
 
 jobject JniVariant::fromValue(const Value &v)
 {
@@ -334,4 +395,41 @@ jobject JniVariant::fromValue(const Value &v)
         return static_cast<jobject>(v.toObject());
     }
     return nullptr;
+}
+
+static std::vector<jobject> s_objects;
+
+jobject JniVariant::registerObject(JNIEnv * env, jobject object)
+{
+    auto it = std::find(s_objects.begin(), s_objects.end(), object);
+    if (it == s_objects.end()) {
+        it = std::find_if(s_objects.begin(), s_objects.end(), JObjectFinder(env, object));
+        if (it == s_objects.end()) {
+            object = env->NewWeakGlobalRef(object);
+            s_objects.push_back(object);
+        } else {
+            object = *it;
+        }
+    } else {
+        object = *it;
+    }
+    return object;
+}
+
+jobject JniVariant::findObject(JNIEnv *env, jobject object)
+{
+    auto it = std::find_if(s_objects.begin(), s_objects.end(), JObjectFinder(env, object));
+    if (it == s_objects.end())
+        return nullptr;
+    return *it;
+}
+
+jobject JniVariant::deregisterObject(JNIEnv *env, jobject object)
+{
+    auto it = std::find_if(s_objects.begin(), s_objects.end(), JObjectFinder(env, object));
+    if (it == s_objects.end())
+        return nullptr;
+    object = *it;
+    s_objects.erase(it);
+    return object;
 }

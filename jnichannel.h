@@ -5,7 +5,9 @@
 
 #include <jni.h>
 
-class JniMetaObjectBase;
+#include <core/proxyobject.h>
+
+class JniMetaObject;
 
 class JniChannel : public Channel
 {
@@ -17,29 +19,39 @@ public:
     // Bridge interface
 protected:
     virtual MetaObject *metaObject(const Object *object) const override;
+
     virtual std::string createUuid() const override;
-    virtual MetaObject::Connection connect(const Object *object, size_t signalIndex) override;
-    virtual bool disconnect(const MetaObject::Connection &c) override;
+
+    virtual ProxyObject * createProxyObject() const override;
+
     virtual void startTimer(int msec) override;
+
     virtual void stopTimer() override;
 
-public:
+protected:
     void registerObject(const std::string &id, jobject object);
+
     void deregisterObject(jobject object);
+
     void propertyChanged(jobject object, jstring property);
 
+    void connectTo(Transport *transport, jobject response);
+
+protected:
+    void invokeMethod(Object *object, jobject method, jobjectArray args, jobject response);
+
 private:
-    JniMetaObjectBase * metaObject2(jclass clazz) const;
+    JniMetaObject * metaObject2(jclass clazz) const;
 
 private:
     friend struct JChannel;
+
     JNIEnv * env_;
     jobject handle_;
     jmethodID createUuid_;
     jmethodID startTimer_;
     jmethodID stopTimer_;
-    std::vector<jobject> objects_;
-    mutable std::map<std::string, JniMetaObjectBase*> classMetas_;
+    static std::map<std::string, JniMetaObject*> classMetas_;
 };
 
 #endif // JNICHANNEL_H

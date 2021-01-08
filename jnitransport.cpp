@@ -17,7 +17,7 @@ JniTransport::~JniTransport()
 
 void JniTransport::sendMessage(const Message &message)
 {
-    std::string json = Value::toJson(Value::ref(const_cast<Message &>(message)));
+    std::string json = Value::toJson(Value(const_cast<Message &>(message)));
     env_->CallVoidMethod(handle_, sendMessage_, env_->NewStringUTF(json.c_str()));
     JThrowable::check(env_);
 }

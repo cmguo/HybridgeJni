@@ -2,6 +2,7 @@
 #include "jnichannel.h"
 #include "jniclass.h"
 #include "jnimeta.h"
+#include "jniproxyobject.h"
 #include "jnitransport.h"
 #include "jnivariant.h"
 
@@ -34,7 +35,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*)
         {"deregisterObject", "(JLjava/lang/Object;)V", reinterpret_cast<void*>(&JChannel::deregisterObject)},
         {"blockUpdates", "(J)Z", reinterpret_cast<void*>(&JChannel::blockUpdates)},
         {"setBlockUpdates", "(JZ)V", reinterpret_cast<void*>(&JChannel::setBlockUpdates)},
-        {"connectTo", "(JJ)V", reinterpret_cast<void*>(&JChannel::connectTo)},
+        {"connectTo", "(JJLcom/tal/hybridge/ProxyObject$OnResult;)V", reinterpret_cast<void*>(&JChannel::connectTo)},
         {"disconnectFrom", "(JJ)V", reinterpret_cast<void*>(&JChannel::disconnectFrom)},
         {"propertyChanged", "(JLjava/lang/Object;Ljava/lang/String;)V", reinterpret_cast<void*>(&JChannel::propertyChanged)},
         {"timerEvent", "(J)V", reinterpret_cast<void*>(&JChannel::timerEvent)},
@@ -59,6 +60,21 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*)
         return JNI_ERR;
     }
     status = env->RegisterNatives(clazzTransport, reinterpret_cast<JNINativeMethod*>(methodsTransport), sizeof(methodsTransport) / sizeof(methodsTransport[0]));
+    if (status != JNI_OK)
+        return status;
+    // ProxyObject methods
+    JNINativeMethod methodsProxyObject[] = {
+        {"setProperty", "(JLjava/lang/String;Ljava/lang/Object;)Z", reinterpret_cast<void*>(&JProxyObject::setProperty)},
+        {"invokeMethod", "(JLjava/lang/reflect/Method;[Ljava/lang/Object;Lcom/tal/hybridge/ProxyObject$OnResult;)Z",
+            reinterpret_cast<void*>(&JProxyObject::invokeMethod)},
+        {"connect", "(JILcom/tal/hybridge/ProxyObject$SignalHandler;)Z", reinterpret_cast<void*>(&JProxyObject::connect)},
+        {"disconnect", "(JILcom/tal/hybridge/ProxyObject$SignalHandler;)Z", reinterpret_cast<void*>(&JProxyObject::disconnect)},
+    };
+    jclass clazzProxyObject = env->FindClass("com/tal/hybridge/ProxyObject");
+    if (clazzTransport == nullptr) {
+        return JNI_ERR;
+    }
+    status = env->RegisterNatives(clazzProxyObject, reinterpret_cast<JNINativeMethod*>(methodsProxyObject), sizeof(methodsTransport) / sizeof(methodsTransport[0]));
     if (status != JNI_OK)
         return status;
     JniVariant::init(env);
@@ -146,12 +162,12 @@ void JChannel::setBlockUpdates(JNIEnv *env, jobject, jlong channel, jboolean blo
     c->setBlockUpdates(block);
 }
 
-void JChannel::connectTo(JNIEnv *env, jobject, jlong channel, jlong transport)
+void JChannel::connectTo(JNIEnv *env, jobject, jlong channel, jlong transport, jobject response)
 {
     std::cout << "JChannel::connectTo" << std::endl;
     C(env, channel)
     T(env, transport)
-    c->connectTo(t.get());
+    c->connectTo(t.get(), response);
 }
 
 void JChannel::disconnectFrom(JNIEnv *env, jobject, jlong channel, jlong transport)
@@ -207,4 +223,37 @@ void JTransport::free(JNIEnv *env, jobject, jlong transport)
     std::cout << "JTransport::free" << std::endl;
     T(env, transport)
     t.reset();
+}
+
+jboolean JProxyObject::setProperty(JNIEnv *env, jobject, jlong handle, jstring property, jobject value)
+{
+    ProxyObject * po = reinterpret_cast<ProxyObject*>(handle);
+    MetaObject const * meta = po->metaObj();
+    JniMetaProperty jmp(JString(env, property));
+    for (size_t i = 0; i < meta->propertyCount(); ++i) {
+        MetaProperty const & mp = meta->property(i);
+        if (jmp == mp) {
+            Array emptyArray;
+            return mp.write(po, JniVariant::toValue(value));
+        }
+    }
+    return false;
+}
+
+jboolean JProxyObject::invokeMethod(JNIEnv *env, jobject, jlong handle, jobject method, jobjectArray args, jobject onResult)
+{
+    JniProxyObject * jpo = reinterpret_cast<JniProxyObject*>(handle);
+    return jpo->invokeMethod(method, args, onResult);
+}
+
+jboolean JProxyObject::connect(JNIEnv *env, jobject, jlong handle, jint signalIndex, jobject handler)
+{
+    JniProxyObject * jpo = reinterpret_cast<JniProxyObject*>(handle);
+    return jpo->connect(signalIndex, handler);
+}
+
+jboolean JProxyObject::disconnect(JNIEnv *env, jobject, jlong handle, jint signalIndex, jobject handler)
+{
+    JniProxyObject * jpo = reinterpret_cast<JniProxyObject*>(handle);
+    return jpo->disconnect(signalIndex, handler);
 }

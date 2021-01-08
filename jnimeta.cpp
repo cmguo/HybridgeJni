@@ -1,19 +1,22 @@
 #include "jnimeta.h"
 #include "jniclass.h"
 #include "jnivariant.h"
+#include <core/message.h>
 
 #include <iostream>
 
 template <typename Meta>
-size_t findByName(std::vector<Meta> const & metas, const std::string &name)
+size_t findMeta(std::vector<Meta> const & metas, const Meta & meta)
 {
+    if (&meta >= &metas[0] && &meta < &metas.back())
+        return std::size_t(&meta - &metas.front());
     for (size_t i = 0; i < metas.size(); ++i)
-        if (name == metas.at(i).name())
+        if (meta == metas.at(i))
             return i;
     return size_t(-1);
 }
 
-JniMetaObject::JniMetaObject(JniMetaObjectBase * super, jclass clazz)
+JniMetaObject::JniMetaObject(JniMetaObject * super, jclass clazz)
     : super_(super)
     , clazz_(static_cast<jclass>(env()->NewGlobalRef(clazz)))
 {
@@ -26,19 +29,19 @@ JniMetaObject::JniMetaObject(JniMetaObjectBase * super, jclass clazz)
     MethodClass & mc = methodClass(env);
     FieldClass & fc = fieldClass(env);
     ModifierClass mfc = modifierClass(env);
+    (void) fc;
     // class name
     className_ = cc.getName(clazz);
     std::cout << "JniMetaObject: " << className_ << std::endl;
     // fields
     std::vector<JniMetaProperty> metaProps;
     for (auto field : cc.getDeclaredFields(clazz)) {
-        JLocalRef lr(env, field);
+        JLocalObjectRef lr(env, field);
         metaProps.emplace_back(JniMetaProperty(this, field));
     }
     // methods
-    metaMethods_.push_back(JniMetaMethod(this));
     for (auto method : cc.getDeclaredMethods(clazz)) {
-        JLocalRef lr(env, method);
+        JLocalObjectRef lr(env, method);
         int mod = mc.getModifiers(method);
         if (!mfc.isPublic(mod) || mfc.isStatic(mod) || mfc.isAbstract(mod))
             continue;
@@ -47,7 +50,7 @@ JniMetaObject::JniMetaObject(JniMetaObjectBase * super, jclass clazz)
             std::string name = m.name() + 3;
             if (!name.empty() && name[0] <= 'Z')
                 name[0] += 'z' - 'Z';
-            size_t ip = findByName(metaProps, name);
+            size_t ip = findMeta(metaProps, JniMetaProperty(name));
             if (ip < metaProps.size()) {
                 metaProps[ip].setGetter(method);
                 continue;
@@ -57,7 +60,7 @@ JniMetaObject::JniMetaObject(JniMetaObjectBase * super, jclass clazz)
             std::string name = m.name() + 3;
             if (!name.empty() && name[0] <= 'Z')
                 name[0] += 'z' - 'Z';
-            size_t ip = findByName(metaProps, name);
+            size_t ip = findMeta(metaProps, JniMetaProperty(name));
             if (ip < metaProps.size()) {
                 metaProps[ip].setSetter(method);
                 continue;
@@ -73,6 +76,12 @@ JniMetaObject::JniMetaObject(JniMetaObjectBase * super, jclass clazz)
             metaProps_.emplace_back(std::move(prop));
         }
     }
+}
+
+JniMetaObject::~JniMetaObject()
+{
+    if (clazz_)
+        env()->DeleteGlobalRef(clazz_);
 }
 
 const char *JniMetaObject::className() const
@@ -93,7 +102,7 @@ const MetaProperty &JniMetaObject::property(size_t index) const
 
 size_t JniMetaObject::methodCount() const
 {
-    return metaMethods_.size();
+    return super_->methodCount() + metaMethods_.size();
 }
 
 const MetaMethod &JniMetaObject::method(size_t index) const
@@ -104,7 +113,7 @@ const MetaMethod &JniMetaObject::method(size_t index) const
 
 size_t JniMetaObject::enumeratorCount() const
 {
-    return metaEnums_.size();
+    return super_->enumeratorCount() + metaEnums_.size();
 }
 
 const MetaEnum &JniMetaObject::enumerator(size_t index) const
@@ -113,24 +122,36 @@ const MetaEnum &JniMetaObject::enumerator(size_t index) const
     return index < n ? super_->enumerator(index) : metaEnums_.at(index - n);
 }
 
-size_t JniMetaObject::metaIndexOf(const std::string &name, MetaType type) const
+bool JniMetaObject::connect(const Connection &c) const
 {
-    if (type == Property)
-        return findByName(metaProps_, name);
-    else if (type == Method)
-        return findByName(metaMethods_, name);
-    else
-        return findByName(metaEnums_, name);
+    if (c.signalIndex() == 0)
+        return true;
+    return false;
+}
+
+bool JniMetaObject::disconnect(const Connection &c) const
+{
+    return c;
 }
 
 size_t JniMetaObject::metaIndexOf(void const *meta, MetaType type) const
 {
     if (type == Property)
-        return static_cast<size_t>(static_cast<JniMetaProperty const*>(meta) - &metaProps_[0]);
+        return findMeta(metaProps_, *reinterpret_cast<JniMetaProperty const*>(meta))
+                + super_->propertyCount();
     else if (type == Method)
-        return static_cast<size_t>(static_cast<JniMetaMethod const*>(meta) - &metaMethods_[0]);
+        return findMeta(metaMethods_, *reinterpret_cast<JniMetaMethod const*>(meta))
+                + super_->methodCount();
     else
-        return static_cast<size_t>(static_cast<JniMetaEnum const*>(meta) - &metaEnums_[0]);
+        return findMeta(metaEnums_, *reinterpret_cast<JniMetaEnum const*>(meta))
+                + super_->enumeratorCount();
+}
+
+JniMetaObject::JniMetaObject(JNIEnv *env)
+    : env_(env)
+    , clazz_(nullptr)
+{
+
 }
 
 JniMetaProperty::JniMetaProperty(JniMetaObject *obj, jobject field)
@@ -154,6 +175,13 @@ JniMetaProperty::JniMetaProperty(JniMetaProperty &&o)
     o.setter_ = nullptr;
 }
 
+JniMetaProperty::JniMetaProperty(const std::string &name)
+    : obj_(nullptr)
+    , field_(nullptr)
+    , name_(name)
+{
+}
+
 JniMetaProperty::~JniMetaProperty()
 {
     if (setter_)
@@ -172,6 +200,16 @@ void JniMetaProperty::setSetter(jobject setter)
 void JniMetaProperty::setGetter(jobject getter)
 {
     getter_ = env()->NewGlobalRef(getter);
+}
+
+bool JniMetaProperty::operator==(const MetaProperty &o)
+{
+    return strcmp(name(), o.name()) == 0;
+}
+
+bool operator==(const JniMetaProperty &l, const JniMetaProperty &r)
+{
+    return strcmp(l.name(), r.name()) == 0;
 }
 
 const char *JniMetaProperty::name() const
@@ -222,19 +260,34 @@ Value JniMetaProperty::read(const Object *object) const
     return JniVariant::toValue(fieldClass().get(field_, jobj));
 }
 
-bool JniMetaProperty::write(Object *object, const Value &value) const
+bool JniMetaProperty::write(Object *object, Value &&value) const
 {
+    jobject jobj = static_cast<jobject>(object);
+    if (setter_) {
+        Array array;
+        array.emplace_back(std::move(value));
+        methodClass().invoke(setter_, jobj,
+                             static_cast<jobjectArray>(JniVariant::fromValue(std::move(array))));
+        return !JThrowable::clear(env());
+    }
     fieldClass().set(field_, static_cast<jobject>(object), JniVariant::fromValue(value));
-    return true;
+    return !JThrowable::clear(env());
 }
 
 JniMetaMethod::JniMetaMethod(JniMetaObject *obj, jobject method)
     : obj_(obj)
     , method_(method)
 {
+    JNIEnv * env = obj->env();
     if (method) {
-        method_ = obj->env()->NewGlobalRef(method);
+        method_ = env->NewGlobalRef(method);
         name_ = methodClass().getName(method);
+        jobjectArray types = methodClass().getParameterTypes(method);
+        int n = env->GetArrayLength(types);
+        for (int i = 0; i < n; ++i) {
+            JLocalClassRef t(env, static_cast<jclass>(env->GetObjectArrayElement(types, i)));
+            paramTypes_.push_back(JniVariant::type(t));
+        }
         std::cout << "JniMetaMethod: " << name_ << std::endl;
     } else {
         name_ = "destroyed";
@@ -245,6 +298,7 @@ JniMetaMethod::JniMetaMethod(JniMetaMethod &&o)
     : obj_(o.obj_)
     , method_(o.method_)
     , name_(std::move(o.name_))
+    , paramTypes_(std::move(o.paramTypes_))
 {
     o.obj_ = nullptr;
     o.method_ = nullptr;
@@ -254,6 +308,27 @@ JniMetaMethod::~JniMetaMethod()
 {
     if (method_)
         obj_->env()->DeleteGlobalRef(method_);
+}
+
+static std::vector<int> parameterTypes(const MetaMethod &o)
+{
+    std::vector<int> vec;
+    for (size_t i = 0; i < o.parameterCount(); ++i)
+        vec.push_back(o.parameterType(i));
+    return vec;
+}
+
+bool JniMetaMethod::operator==(const MetaMethod &o)
+{
+    return strcmp(name(), o.name()) == 0
+            && parameterCount() == o.parameterCount()
+            && paramTypes_ == parameterTypes(o);
+}
+
+bool operator==(const JniMetaMethod &l, const JniMetaMethod &r)
+{
+    return strcmp(l.name(), r.name()) == 0
+            && l.paramTypes_ == r.paramTypes_;
 }
 
 const char *JniMetaMethod::name() const
@@ -288,32 +363,48 @@ const char *JniMetaMethod::methodSignature() const
 
 size_t JniMetaMethod::parameterCount() const
 {
-    return static_cast<size_t>(methodClass().getParameterCount(method_));
+    if (method_ == nullptr)
+        return 0;
+    return paramTypes_.size();
 }
 
 int JniMetaMethod::parameterType(size_t index) const
 {
-    (void) index;
-    return -1;
+    return paramTypes_.at(index);
 }
 
 const char *JniMetaMethod::parameterName(size_t index) const
 {
-    (void) index;
-    return nullptr;
+    static std::vector<std::string> names;
+    for (size_t i = names.size(); i <= index; ++i)
+        names.emplace_back(std::string("parameter") + stringNumber(index));
+    return names.at(index).c_str();
 }
 
-Value JniMetaMethod::invoke(Object *object, const Array &args) const
+bool JniMetaMethod::invoke(Object *object, Array &&args, const MetaMethod::Response &resp) const
 {
     jobject returnValue = methodClass().invoke(method_, static_cast<jobject>(object),
-           static_cast<jobjectArray>(JniVariant::fromValue(Value::ref(const_cast<Array&>(args)))));
-    return JniVariant::toValue(returnValue);
+           static_cast<jobjectArray>(JniVariant::fromValue(std::move(args))));
+    resp(JniVariant::toValue(returnValue));
+    return JThrowable::clear(obj_->env());
 }
 
 JniMetaEnum::JniMetaEnum(JniMetaObject *obj, jclass enumClass)
     : obj_(obj)
     , enumClass_(enumClass)
 {
+}
+
+JniMetaEnum::JniMetaEnum(const std::string &name)
+    : obj_(nullptr)
+    , enumClass_(nullptr)
+    , name_(name)
+{
+}
+
+bool operator==(const JniMetaEnum &l, const JniMetaEnum &r)
+{
+    return strcmp(l.name(), r.name()) == 0;
 }
 
 const char *JniMetaEnum::name() const
@@ -339,24 +430,22 @@ int JniMetaEnum::value(size_t index) const
 }
 
 JniObjectMetaObject::JniObjectMetaObject(JNIEnv *env)
-    : env_(env)
+    : JniMetaObject(env)
 {
+    metaMethods_.emplace_back(JniMetaMethod(this));
 }
 
-const MetaProperty &JniObjectMetaObject::property(size_t) const
+const char *JniObjectMetaObject::className() const
 {
-    static JniMetaProperty p;
-    return p;
+    return "Object";
 }
 
-const MetaMethod &JniObjectMetaObject::method(size_t) const
+size_t JniObjectMetaObject::methodCount() const
 {
-    static JniMetaMethod m;
-    return m;
+    return metaMethods_.size();
 }
 
-const MetaEnum &JniObjectMetaObject::enumerator(size_t) const
+const MetaMethod &JniObjectMetaObject::method(size_t index) const
 {
-    static JniMetaEnum e;
-    return e;
+    return metaMethods_.at(index);
 }

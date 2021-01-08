@@ -1,6 +1,8 @@
 #include "jnichannel.h"
 #include "jnimeta.h"
 #include "jniclass.h"
+#include "jnivariant.h"
+#include "jniproxyobject.h"
 
 #include <algorithm>
 
@@ -33,17 +35,10 @@ std::string JniChannel::createUuid() const
     return JString(env_, uuid);
 }
 
-MetaObject::Connection JniChannel::connect(const Object *object, size_t signalIndex)
+ProxyObject *JniChannel::createProxyObject() const
 {
-    (void) object;
-    (void) signalIndex;
-    return MetaObject::Connection();
-}
-
-bool JniChannel::disconnect(const MetaObject::Connection &c)
-{
-    (void) c;
-    return false;
+    ProxyObject * po = new JniProxyObject(env_);
+    return po;
 }
 
 void JniChannel::startTimer(int msec)
@@ -58,34 +53,50 @@ void JniChannel::stopTimer()
 
 void JniChannel::registerObject(const std::string &id, jobject object)
 {
-    object = env_->NewWeakGlobalRef(object);
+    object = JniVariant::registerObject(env_, object);
     Channel::registerObject(id, object);
-    objects_.push_back(object);
 }
 
 void JniChannel::deregisterObject(jobject object)
 {
-    auto it = std::find_if(objects_.begin(), objects_.end(), JObjectFinder(env_, object));
-    if (it != objects_.end()) {
-        jobject o = *it;
-        objects_.erase(it);
-        Channel::deregisterObject(o);
+    object = JniVariant::deregisterObject(env_, object);
+    if (object != nullptr) {
+        Channel::deregisterObject(object);
     }
 }
 
 void JniChannel::propertyChanged(jobject object, jstring property)
 {
-    JniMetaObject * meta = static_cast<JniMetaObject*>(metaObject2(env_->GetObjectClass(object)));
-    Channel::propertyChanged(object, meta->metaIndexOf(property, JniMetaObject::Property));
+    JLocalClassRef clazz(env_, env_->GetObjectClass(object));
+    JniMetaObject * meta = static_cast<JniMetaObject*>(metaObject2(clazz));
+    object = JniVariant::findObject(env_, object);
+    if (object != nullptr) {
+        JniMetaProperty prop(JString(env_, property));
+        size_t index = meta->metaIndexOf(&prop, JniMetaObject::Property);
+        meta->propertyChanged(this, object, index);
+    }
 }
 
-JniMetaObjectBase *JniChannel::metaObject2(jclass clazz) const
+void JniChannel::connectTo(Transport *transport, jobject response)
+{
+    MetaMethod::Response resp;
+    if (response) {
+        resp = [env = env_, response] (Value && result) {
+            onResultClass(env).apply(response, JniVariant::fromValue(result));
+        };
+    }
+    Channel::connectTo(transport, resp);
+}
+
+std::map<std::string, JniMetaObject*> JniChannel::classMetas_;
+
+JniMetaObject *JniChannel::metaObject2(jclass clazz) const
 {
     std::string name = classClass(env_).getName(clazz);
     auto it = classMetas_.find(name);
     if (it == classMetas_.end()) {
         jclass super = classClass().getSuperclass(clazz);
-        JniMetaObjectBase * smeta = metaObject2(super);
+        JniMetaObject * smeta = metaObject2(super);
         JniMetaObject * meta = new JniMetaObject(smeta, clazz);
         it = classMetas_.insert(std::make_pair(name, meta)).first;
     }

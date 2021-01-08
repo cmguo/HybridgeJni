@@ -1,11 +1,13 @@
 package com.tal.hybridge;
 
+import java.util.Map;
+
 public abstract class Channel
 {
     private long handle_ = 0;
 
     static {
-        System.loadLibrary("HybridgeJni");
+        System.loadLibrary("HybridgeJnid");
     }
 
     /*
@@ -38,12 +40,18 @@ public abstract class Channel
     }
 
     public void connectTo(Transport transport) {
-        connectTo(handle_, transport.handle());
+        connectTo2(transport, null);
+    }
+
+    public void connectTo2(Transport transport, ProxyObject.OnResult onResult) {
+        connectTo(handle_, transport.handle(), onResult);
     }
 
     public void disconnectFrom(Transport transport) {
         disconnectFrom(handle_, transport.handle());
     }
+
+    /* Protected methods called by devided class */
 
     protected void propertyChanged(Object object, String name) {
         propertyChanged(handle_, object, name);
@@ -52,6 +60,8 @@ public abstract class Channel
     protected void timerEvent() {
         timerEvent(handle_);
     }
+
+    /* Protected methods implemented by devided class */
 
     protected abstract String createUuid();
 
@@ -71,7 +81,7 @@ public abstract class Channel
 
     private native void setBlockUpdates(long handle, boolean block);
 
-    private native void connectTo(long handle, long transport);
+    private native void connectTo(long handle, long transport, ProxyObject.OnResult onResult);
 
     private native void disconnectFrom(long handle, long transport);
 
