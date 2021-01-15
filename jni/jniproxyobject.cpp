@@ -17,6 +17,20 @@ JniProxyObject::~JniProxyObject()
     handle_ = nullptr;
 }
 
+jobject JniProxyObject::getProperty(jstring property)
+{
+    MetaObject const * meta = metaObj();
+    JniMetaProperty jmp(JString(env_, property));
+    for (size_t i = 0; i < meta->propertyCount(); ++i) {
+        MetaProperty const & mp = meta->property(i);
+        if (jmp == mp) {
+            Array emptyArray;
+            return JniVariant::fromValue(mp.read(this));
+        }
+    }
+    return nullptr;
+}
+
 jboolean JniProxyObject::setProperty(jstring property, jobject value)
 {
     MetaObject const * meta = metaObj();

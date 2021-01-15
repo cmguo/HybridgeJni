@@ -35,6 +35,10 @@ public class ProxyObject {
         connections_ = new TreeMap<>();
     }
 
+	public Object getProperty(String property) {
+        return getProperty(handle_, property);
+    }
+    
 	public boolean setProperty(String property, Object value) {
         return setProperty(handle_, property, value);
     }
@@ -63,6 +67,8 @@ public class ProxyObject {
             return true;
     }
     
+    private native Object getProperty(long handle, String property);
+
     private native boolean setProperty(long handle, String property, Object value);
 
     private native boolean invokeMethod(long handle, Method method, Object[] args, OnResult onResult);
