@@ -81,10 +81,12 @@ struct MethodClass : MemberClass
 {
     MethodClass(JNIEnv *env);
     jint getParameterCount(jobject method) const;
+    jclass getReturnType(jobject method) const;
     jobjectArray getParameterTypes(jobject method) const;
     jobject invoke(jobject method, jobject object, jobjectArray args) const;
 
 private:
+    jmethodID getReturnType_;
     jmethodID getParameterCount_;
     jmethodID getParameterTypes_;
     jmethodID invoke_;

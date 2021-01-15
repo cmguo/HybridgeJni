@@ -142,10 +142,16 @@ MethodClass::MethodClass(JNIEnv *env)
     : MemberClass(env)
 {
     jclass clazz = env->FindClass("java/lang/reflect/Method");
+    getReturnType_ = env->GetMethodID(clazz, "getReturnType", "()Ljava/lang/Class;");
     getParameterCount_ = env->GetMethodID(clazz, "getParameterCount", "()I");
     getParameterTypes_ = env->GetMethodID(clazz, "getParameterTypes", "()[Ljava/lang/Class;");
     invoke_ = env->GetMethodID(clazz, "invoke", "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;");
     JThrowable::check(env);
+}
+
+jclass MethodClass::getReturnType(jobject method) const
+{
+    return static_cast<jclass>(env_->CallObjectMethod(method, getReturnType_));
 }
 
 jint MethodClass::getParameterCount(jobject method) const

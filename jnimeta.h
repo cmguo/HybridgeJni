@@ -103,7 +103,7 @@ public:
 public:
     virtual const char *name() const override;
     virtual bool isValid() const override;
-    virtual int type() const override;
+    virtual Value::Type type() const override;
     virtual bool isConstant() const override;
     virtual bool hasNotifySignal() const override;
     virtual size_t notifySignalIndex() const override;
@@ -143,16 +143,18 @@ public:
     virtual bool isPublic() const override;
     virtual size_t methodIndex() const override;
     virtual const char *methodSignature() const override;
+    virtual Value::Type returnType() const override;
     virtual size_t parameterCount() const override;
-    virtual int parameterType(size_t index) const override;
+    virtual Value::Type parameterType(size_t index) const override;
     virtual const char *parameterName(size_t index) const override;
     virtual bool invoke(Object *object, Array &&args, Response const & resp) const override;
 
 private:
     JniMetaObject *obj_;
     jobject method_;
+    Value::Type returnType_;
     std::string name_;
-    std::vector<int> paramTypes_;
+    std::vector<Value::Type> paramTypes_;
 };
 
 class JniMetaEnum : public MetaEnum

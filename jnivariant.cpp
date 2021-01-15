@@ -307,7 +307,7 @@ void JniVariant::init(JNIEnv *env)
     std::copy(classes2, classes2 + 12, classes);
 }
 
-int JniVariant::type(jclass type)
+Value::Type JniVariant::type(jclass type)
 {
     ClassClass & ci = classClass();
     if (ci.isArray(type)) {
@@ -318,10 +318,14 @@ int JniVariant::type(jclass type)
     });
     if (pjc < classes + Converters::Array) {
         int n = static_cast<int>(pjc - classes);
-        return n == Converters::Boolean ? Value::Bool
-                                        : (n < Converters::Long
-                                           ? Value::Int
-                                           : n - Converters::Long + Value::Long);
+        if (n == Converters::Boolean) {
+            n = Value::Bool;
+        } else if (n < Converters::Long) {
+            n = Value::Int;
+        } else {
+            n =  n - Converters::Long + Value::Long;
+        }
+        return static_cast<Value::Type>(n);
     }
     if (ci.isAssignableFrom(classes[Converters::Iterable]->clazz(), type)) {
         return Value::Array_;

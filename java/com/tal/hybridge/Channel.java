@@ -1,7 +1,5 @@
 package com.tal.hybridge;
 
-import java.util.Map;
-
 public abstract class Channel
 {
     private long handle_ = 0;
@@ -10,9 +8,6 @@ public abstract class Channel
         System.loadLibrary("HybridgeJnid");
     }
 
-    /*
-        if pressures != null, addPressure is ignored
-     */
     public Channel() {
         handle_ = create();
     }

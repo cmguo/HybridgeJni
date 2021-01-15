@@ -10,7 +10,7 @@ class JniVariant
 public:
     static void init(JNIEnv * env);
 
-    static int type(jclass clazz);
+    static Value::Type type(jclass clazz);
 
     static Value toValue(jobject object);
 

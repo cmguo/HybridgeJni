@@ -240,19 +240,19 @@ jboolean JProxyObject::setProperty(JNIEnv *env, jobject, jlong handle, jstring p
     return false;
 }
 
-jboolean JProxyObject::invokeMethod(JNIEnv *env, jobject, jlong handle, jobject method, jobjectArray args, jobject onResult)
+jboolean JProxyObject::invokeMethod(JNIEnv *, jobject, jlong handle, jobject method, jobjectArray args, jobject onResult)
 {
     JniProxyObject * jpo = reinterpret_cast<JniProxyObject*>(handle);
     return jpo->invokeMethod(method, args, onResult);
 }
 
-jboolean JProxyObject::connect(JNIEnv *env, jobject, jlong handle, jint signalIndex, jobject handler)
+jboolean JProxyObject::connect(JNIEnv *, jobject, jlong handle, jint signalIndex, jobject handler)
 {
     JniProxyObject * jpo = reinterpret_cast<JniProxyObject*>(handle);
     return jpo->connect(signalIndex, handler);
 }
 
-jboolean JProxyObject::disconnect(JNIEnv *env, jobject, jlong handle, jint signalIndex, jobject handler)
+jboolean JProxyObject::disconnect(JNIEnv *, jobject, jlong handle, jint signalIndex, jobject handler)
 {
     JniProxyObject * jpo = reinterpret_cast<JniProxyObject*>(handle);
     return jpo->disconnect(signalIndex, handler);

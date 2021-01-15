@@ -225,9 +225,9 @@ bool JniMetaProperty::isValid() const
     return !modifierClass().isStatic(mod) && (getter_ || modifierClass().isPublic(mod));
 }
 
-int JniMetaProperty::type() const
+Value::Type JniMetaProperty::type() const
 {
-    return -1;
+    return Value::None;
 }
 
 bool JniMetaProperty::isConstant() const
@@ -282,6 +282,7 @@ JniMetaMethod::JniMetaMethod(JniMetaObject *obj, jobject method)
     if (method) {
         method_ = env->NewGlobalRef(method);
         name_ = methodClass().getName(method);
+        returnType_ = JniVariant::type(methodClass().getReturnType(method));
         jobjectArray types = methodClass().getParameterTypes(method);
         int n = env->GetArrayLength(types);
         for (int i = 0; i < n; ++i) {
@@ -310,9 +311,9 @@ JniMetaMethod::~JniMetaMethod()
         obj_->env()->DeleteGlobalRef(method_);
 }
 
-static std::vector<int> parameterTypes(const MetaMethod &o)
+static std::vector<Value::Type> parameterTypes(const MetaMethod &o)
 {
-    std::vector<int> vec;
+    std::vector<Value::Type> vec;
     for (size_t i = 0; i < o.parameterCount(); ++i)
         vec.push_back(o.parameterType(i));
     return vec;
@@ -361,6 +362,11 @@ const char *JniMetaMethod::methodSignature() const
     return nullptr;
 }
 
+Value::Type JniMetaMethod::returnType() const
+{
+    return returnType_;
+}
+
 size_t JniMetaMethod::parameterCount() const
 {
     if (method_ == nullptr)
@@ -368,7 +374,7 @@ size_t JniMetaMethod::parameterCount() const
     return paramTypes_.size();
 }
 
-int JniMetaMethod::parameterType(size_t index) const
+Value::Type JniMetaMethod::parameterType(size_t index) const
 {
     return paramTypes_.at(index);
 }
