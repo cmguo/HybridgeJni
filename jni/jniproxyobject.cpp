@@ -17,7 +17,7 @@ JniProxyObject::~JniProxyObject()
     handle_ = nullptr;
 }
 
-jobject JniProxyObject::getProperty(jstring property)
+jobject JniProxyObject::readProperty(jstring property)
 {
     MetaObject const * meta = metaObj();
     JniMetaProperty jmp(JString(env_, property));
@@ -31,7 +31,7 @@ jobject JniProxyObject::getProperty(jstring property)
     return nullptr;
 }
 
-jboolean JniProxyObject::setProperty(jstring property, jobject value)
+jboolean JniProxyObject::writeProperty(jstring property, jobject value)
 {
     MetaObject const * meta = metaObj();
     JniMetaProperty jmp(JString(env_, property));

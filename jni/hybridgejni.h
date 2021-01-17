@@ -28,7 +28,8 @@ struct JTransport
 
 struct JProxyObject
 {
-    static jboolean setProperty(JNIEnv *env, jobject, jlong handle, jstring property, jobject value);
+    static jobject readProperty(JNIEnv *env, jobject, jlong handle, jstring property);
+    static jboolean writeProperty(JNIEnv *env, jobject, jlong handle, jstring property, jobject value);
     static jboolean invokeMethod(JNIEnv *env, jobject, jlong handle, jobject method, jobjectArray args, jobject onResult);
     static jboolean connect(JNIEnv *env, jobject, jlong handle, jint signalIndex, jobject handler);
     static jboolean disconnect(JNIEnv *env, jobject, jlong handle, jint signalIndex, jobject handler);

@@ -64,7 +64,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*)
         return status;
     // ProxyObject methods
     JNINativeMethod methodsProxyObject[] = {
-        {"setProperty", "(JLjava/lang/String;Ljava/lang/Object;)Z", reinterpret_cast<void*>(&JProxyObject::setProperty)},
+        {"readProperty", "(JLjava/lang/String;)Ljava/lang/Object;", reinterpret_cast<void*>(&JProxyObject::readProperty)},
+        {"writeProperty", "(JLjava/lang/String;Ljava/lang/Object;)Z", reinterpret_cast<void*>(&JProxyObject::writeProperty)},
         {"invokeMethod", "(JLjava/lang/reflect/Method;[Ljava/lang/Object;Lcom/tal/hybridge/ProxyObject$OnResult;)Z",
             reinterpret_cast<void*>(&JProxyObject::invokeMethod)},
         {"connect", "(JILcom/tal/hybridge/ProxyObject$SignalHandler;)Z", reinterpret_cast<void*>(&JProxyObject::connect)},
@@ -225,7 +226,22 @@ void JTransport::free(JNIEnv *env, jobject, jlong transport)
     t.reset();
 }
 
-jboolean JProxyObject::setProperty(JNIEnv *env, jobject, jlong handle, jstring property, jobject value)
+jobject JProxyObject::readProperty(JNIEnv *env, jobject, jlong handle, jstring property)
+{
+    ProxyObject * po = reinterpret_cast<ProxyObject*>(handle);
+    MetaObject const * meta = po->metaObj();
+    JniMetaProperty jmp(JString(env, property));
+    for (size_t i = 0; i < meta->propertyCount(); ++i) {
+        MetaProperty const & mp = meta->property(i);
+        if (jmp == mp) {
+            Array emptyArray;
+            return JniVariant::fromValue(mp.read(po));
+        }
+    }
+    return nullptr;
+}
+
+jboolean JProxyObject::writeProperty(JNIEnv *env, jobject, jlong handle, jstring property, jobject value)
 {
     ProxyObject * po = reinterpret_cast<ProxyObject*>(handle);
     MetaObject const * meta = po->metaObj();

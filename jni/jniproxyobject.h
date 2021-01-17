@@ -17,9 +17,9 @@ public:
 private:
     friend struct JProxyObject;
 
-    jobject getProperty(jstring property);
+    jobject readProperty(jstring property);
 
-    jboolean setProperty(jstring property, jobject value);
+    jboolean writeProperty(jstring property, jobject value);
 
     jboolean invokeMethod(jobject method, jobjectArray args, jobject onResult);
 
