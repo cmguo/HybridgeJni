@@ -345,7 +345,7 @@ Value JniVariant::toValue(jobject object)
 {
     ClassClass & ci = classClass();
     jclass type = ci.getClass(object);
-    jclass comtype = type;
+    jclass comtype = nullptr;
     if (ci.isArray(type)) {
         comtype = ci.getComponentType(type);
     }
@@ -353,12 +353,12 @@ Value JniVariant::toValue(jobject object)
         return *jc == type;
     });
     if (pjc < classes + Converters::Array) {
-        if (comtype == type)
+        if (comtype == nullptr)
             return (*pjc)->toValue(object);
         else
             return static_cast<BoxConverter*>(*pjc)->toArrayValue(static_cast<jarray>(object));
     }
-    if (comtype != type) {
+    if (comtype != nullptr) {
         return classes[Converters::Array]->toValue(object);
     }
     if (ci.isInstance(classes[Converters::Iterable]->clazz(), object)) {

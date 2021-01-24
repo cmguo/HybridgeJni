@@ -8,7 +8,7 @@
 class JniProxyObject : public ProxyObject
 {
 public:
-    JniProxyObject(JNIEnv * env);
+    JniProxyObject(JNIEnv * env, Map &&classinfo);
 
     ~JniProxyObject() override;
 

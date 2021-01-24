@@ -70,7 +70,7 @@ interface ITestObject
 
 public class Test {
     public static void main(String[] args) {
-        try { System.in.read(); } catch (Throwable e) {}
+        //try { System.in.read(); } catch (Throwable e) {}
 
         TestChannel cp = new TestChannel();
         TestTransport tp = new TestTransport();

@@ -1,0 +1,22 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Launch Current File",
+            "request": "launch",
+            "mainClass": "${file}"
+        },
+        {
+            "type": "java",
+            "name": "Launch Test",
+            "cwd": "D:/work/build-Qt-Desktop_Qt_5_12_4_MSVC2017_64bit-Debug/debug",
+            "request": "launch",
+            "mainClass": "com.tal.hybridge.Test",
+            "projectName": "HybridgeJni_57d4e324"
+        }
+    ]
+}

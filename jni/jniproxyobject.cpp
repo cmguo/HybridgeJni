@@ -4,8 +4,9 @@
 
 #include <core/meta.h>
 
-JniProxyObject::JniProxyObject(JNIEnv * env)
-    : env_(env)
+JniProxyObject::JniProxyObject(JNIEnv * env, Map &&classinfo)
+    : ProxyObject(std::move(classinfo))
+    , env_(env)
 {
     handle_ = proxyObjectClass(env).create(reinterpret_cast<jlong>(this));
     handle_ = env->NewGlobalRef(handle_);

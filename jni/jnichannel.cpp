@@ -35,9 +35,9 @@ std::string JniChannel::createUuid() const
     return JString(env_, uuid);
 }
 
-ProxyObject *JniChannel::createProxyObject() const
+ProxyObject *JniChannel::createProxyObject(Map &&classinfo) const
 {
-    ProxyObject * po = new JniProxyObject(env_);
+    ProxyObject * po = new JniProxyObject(env_, std::move(classinfo));
     return po;
 }
 
