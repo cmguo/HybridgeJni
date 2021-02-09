@@ -72,8 +72,7 @@ void JniChannel::propertyChanged(jobject object, jstring property)
     object = JniVariant::findObject(env_, object);
     if (object != nullptr) {
         JniMetaProperty prop(JString(env_, property));
-        size_t index = meta->metaIndexOf(&prop, JniMetaObject::Property);
-        meta->propertyChanged(this, object, index);
+        meta->propertyChanged(this, object, prop.propertyIndex());
     }
 }
 

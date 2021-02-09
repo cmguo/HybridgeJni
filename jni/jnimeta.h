@@ -1,7 +1,7 @@
 #ifndef JNIMETA_H
 #define JNIMETA_H
 
-#include <core/meta.h>
+#include <core/metaobject.h>
 
 #include <jni.h>
 
@@ -58,12 +58,6 @@ protected:
     std::vector<JniMetaEnum> metaEnums_;
 };
 
-class JniMetaObjectBase : public MetaObject
-{
-public:
-    virtual JNIEnv *env() const = 0;
-};
-
 class JniObjectMetaObject : public JniMetaObject
 {
 public:
@@ -105,6 +99,7 @@ public:
     virtual bool isValid() const override;
     virtual Value::Type type() const override;
     virtual bool isConstant() const override;
+    virtual size_t propertyIndex() const override;
     virtual bool hasNotifySignal() const override;
     virtual size_t notifySignalIndex() const override;
     virtual const MetaMethod &notifySignal() const override;

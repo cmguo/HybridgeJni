@@ -235,6 +235,11 @@ bool JniMetaProperty::isConstant() const
     return false;
 }
 
+size_t JniMetaProperty::propertyIndex() const
+{
+    return obj_->metaIndexOf(this, JniMetaObject::Property);
+}
+
 bool JniMetaProperty::hasNotifySignal() const
 {
     return false;

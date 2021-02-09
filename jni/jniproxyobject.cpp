@@ -2,7 +2,7 @@
 #include "jniproxyobject.h"
 #include "jnivariant.h"
 
-#include <core/meta.h>
+#include <core/metaobject.h>
 
 JniProxyObject::JniProxyObject(JNIEnv * env, Map &&classinfo)
     : ProxyObject(std::move(classinfo))
