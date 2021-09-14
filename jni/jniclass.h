@@ -188,6 +188,10 @@ public:
     {
         return str_;
     }
+    char const * str() const
+    {
+        return str_;
+    }
 private:
     JNIEnv *env_;
     jstring jstr_;

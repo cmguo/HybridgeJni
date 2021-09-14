@@ -20,28 +20,20 @@ JniProxyObject::~JniProxyObject()
 
 jobject JniProxyObject::readProperty(jstring property)
 {
-    MetaObject const * meta = metaObj();
-    JniMetaProperty jmp(JString(env_, property));
-    for (size_t i = 0; i < meta->propertyCount(); ++i) {
-        MetaProperty const & mp = meta->property(i);
-        if (jmp == mp) {
-            Array emptyArray;
-            return JniVariant::fromValue(mp.read(this));
-        }
+    MetaProperty const * mp = this->property(JString(env_, property).str());
+    if (mp) {
+        Array emptyArray;
+        return JniVariant::fromValue(mp->read(this));
     }
     return nullptr;
 }
 
 jboolean JniProxyObject::writeProperty(jstring property, jobject value)
 {
-    MetaObject const * meta = metaObj();
-    JniMetaProperty jmp(JString(env_, property));
-    for (size_t i = 0; i < meta->propertyCount(); ++i) {
-        MetaProperty const & mp = meta->property(i);
-        if (jmp == mp) {
-            Array emptyArray;
-            return mp.write(this, JniVariant::toValue(value));
-        }
+    MetaProperty const * mp = this->property(JString(env_, property).str());
+    if (mp) {
+        Array emptyArray;
+        return mp->write(this, JniVariant::toValue(value));
     }
     return false;
 }
