@@ -1,5 +1,7 @@
 #include "jniclass.h"
 
+#include <stdexcept>
+
 Class::Class(JNIEnv *env, const char *className)
 {
     env_ = env;
