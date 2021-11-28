@@ -15,7 +15,7 @@ JniTransport::~JniTransport()
     env_->DeleteGlobalRef(handle_);
 }
 
-void JniTransport::sendMessage(const Message &message)
+void JniTransport::sendMessage(Message &&message)
 {
     std::string json = Value::toJson(Value(const_cast<Message &>(message)));
     env_->CallVoidMethod(handle_, sendMessage_, env_->NewStringUTF(json.c_str()));
